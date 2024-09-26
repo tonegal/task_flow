@@ -1,0 +1,26 @@
+prometheus:
+  port: 9090
+  endpoint: "/metrics"
+
+logging:
+  level: "info"   # can be "debug", "info", "warn", "error"
+  format: "json"  # can be "console" or "json"
+
+profiling:
+  port: 6060
+
+producer:
+  max_backlog: 10           # number of messages produced in total
+  prod_rate: 2              # number of messages produced per second
+  flow_size_limit: 1000000  # the most number of Bytes that can be sent at a time
+
+consumer:
+  rate_limit: 6             # maximum number of messages in the stream per second
+  flow_size_limit: 1000000  # the most number of Bytes that can be in the stream at a time
+
+database:
+  host: "localhost"
+  user: "postgres"
+  password: "postgres"
+  dbname: "task_flow"
+  sslmode: "disable"
