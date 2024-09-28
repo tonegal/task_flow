@@ -15,6 +15,37 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	tasksProcessing = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "tasks_processing_total",
+		Help: "The total number of tasks being processed by Consumer service",
+	})
+
+	tasksDone = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "tasks_done_total",
+		Help: "The total number of tasks completed by Consumer service in one execution",
+	})
+
+	tasksSumValuesByType = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "tasks_sum_values_by_type",
+			Help: "Sum of values of tasks completed by Consumer service in one execution, grouped by task type",
+		},
+		[]string{"type"}, // Label for task type
+	)
+
+	tasksDoneByType = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "tasks_done_by_type",
+			Help: "The total number of tasks completed by Consumer service in one execution, grouped by task type",
+		},
+		[]string{"type"}, // Label for task type
+	)
 )
 
 type ConsumerImpl struct {
@@ -41,7 +72,9 @@ func (ci ConsumerImpl) StreamTask(ctx context.Context, call internal.ByteStream_
 		panic(err)
 	}
 
-	fmt.Printf("Task started to be processed: ID: %d, Type: %d, Value: %d\n", tid, ttype, tvalue)
+	tasksProcessing.Inc()
+
+	//fmt.Printf("Task started to be processed: ID: %d, Type: %d, Value: %d\n", tid, ttype, tvalue)
 	time.Sleep(time.Duration(tvalue) * time.Millisecond)
 
 	now_utc = time.Now().UTC()
@@ -54,7 +87,13 @@ func (ci ConsumerImpl) StreamTask(ctx context.Context, call internal.ByteStream_
 		panic(err)
 	}
 
-	fmt.Printf("Task %d processed\n", tid)
+	tasksProcessing.Dec()
+	ttype_string := fmt.Sprintf("%d", ttype)
+	tasksSumValuesByType.WithLabelValues(ttype_string).Add(float64(tvalue))
+	tasksDone.Inc()
+	tasksDoneByType.WithLabelValues(ttype_string).Inc()
+
+	//fmt.Printf("Task %d processed\n", tid)
 	return nil
 }
 
@@ -66,9 +105,18 @@ func (ConsumerImpl) Done(ctx context.Context, call internal.ByteStream_done) err
 func Init_Consumer() error {
 	cfg := config.LoadConfig()
 
+	db_conn_str := fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.Database.Host,
+		cfg.Database.User,
+		cfg.Database.Password,
+		cfg.Database.Dbname,
+		cfg.Database.Sslmode,
+	)
+
 	ctx := context.Background()
 
-	pg_conn, err := pgx.Connect(ctx, "host=localhost user=postgres password=postgres dbname=task_flow sslmode=disable")
+	pg_conn, err := pgx.Connect(ctx, db_conn_str)
 	if err != nil {
 		panic(err)
 	}
@@ -78,11 +126,20 @@ func Init_Consumer() error {
 
 	fmt.Println("Postgres connection created...")
 
+	internal.StartMetricsServer(cfg.Prometheus.Cons_Metrics_Port)
+	tasksProcessing.Set(0)
+	tasksDone.Set(0)
+	tasksSumValuesByType.Reset()
+	tasksDoneByType.Reset()
+
+	fmt.Println("Metrics populator is started...")
+
 	server := ConsumerImpl{queries: queries}
 	client := internal.ByteStream_ServerToClient(server)
 	client.SetFlowLimiter(flowcontrol.NewFixedLimiter(cfg.Consumer.Flow_Size_Limit)) // 1 Message is ~8 Byte
 
-	listener, err := net.Listen("tcp", "localhost:12345")
+	address := fmt.Sprintf("%s:%s", cfg.Consumer.Host, cfg.Consumer.Port)
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		panic(err)
 	}

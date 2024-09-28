@@ -16,6 +16,16 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	tasksReceived = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "tasks_received_total",
+		Help: "The total number of tasks received from Producer service in one execution",
+	})
 )
 
 func Init_Producer() {
@@ -41,7 +51,13 @@ func Init_Producer() {
 
 	fmt.Println("Postgres connection created...")
 
-	conn, err := net.Dial("tcp", "localhost:12345")
+	internal.StartMetricsServer(cfg.Prometheus.Prod_Metrics_Port)
+	tasksReceived.Set(0)
+
+	fmt.Println("Metrics populator is started...")
+
+	address := fmt.Sprintf("%s:%s", cfg.Consumer.Host, cfg.Consumer.Port)
+	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		panic(err)
 	}
@@ -97,7 +113,7 @@ func Init_Producer() {
 		taskObj.SetTvalue(uint8(tvalue))
 
 		now_utc := time.Now().UTC()
-		inTask, err := queries.CreateTask(ctx, internal.CreateTaskParams{
+		_, err = queries.CreateTask(ctx, internal.CreateTaskParams{
 			ID:             tid,
 			Type:           int16(taskObj.Ttype()),
 			Value:          int16(taskObj.Tvalue()),
@@ -108,7 +124,10 @@ func Init_Producer() {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("Task inserted to DB: ID: %d, Type: %d, Value: %d\n", inTask.ID, inTask.Type, inTask.Value)
+
+		tasksReceived.Inc()
+
+		//fmt.Printf("Task inserted to DB: ID: %d, Type: %d, Value: %d\n", inTask.ID, inTask.Type, inTask.Value)
 
 		err = bs.StreamTask(ctx, func(p internal.ByteStream_streamTask_Params) error {
 			return p.SetTask(taskObj)
@@ -116,7 +135,7 @@ func Init_Producer() {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("Sent Task: ID: %d, Type: %d Value: %d\n", taskObj.Tid(), taskObj.Ttype(), taskObj.Tvalue())
+		//fmt.Printf("Sent Task: ID: %d, Type: %d Value: %d\n", taskObj.Tid(), taskObj.Ttype(), taskObj.Tvalue())
 	}
 
 	future, release := bs.Done(ctx, nil)

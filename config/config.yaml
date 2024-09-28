@@ -1,6 +1,7 @@
 prometheus:
-  port: 9090
-  endpoint: "/metrics"
+  prod_metrics_port: 8090
+  cons_metrics_port: 8091
+  metrics_endpoint: "/metrics"
 
 logging:
   level: "info"   # can be "debug", "info", "warn", "error"
@@ -10,12 +11,14 @@ profiling:
   port: 6060
 
 producer:
-  max_backlog: 10           # number of messages produced in total
-  prod_rate: 2              # number of messages produced per second
+  max_backlog: 10000        # number of messages produced in total
+  prod_rate: 300            # number of messages produced per second
   flow_size_limit: 1000000  # the most number of Bytes that can be sent at a time
 
 consumer:
-  rate_limit: 6             # maximum number of messages in the stream per second
+  host: "localhost"
+  port: 12345
+  rate_limit: 1000          # maximum number of messages in the stream per second
   flow_size_limit: 1000000  # the most number of Bytes that can be in the stream at a time
 
 database:

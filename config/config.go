@@ -5,12 +5,19 @@ import (
 )
 
 type Config struct {
+	Prometheus struct {
+		Prod_Metrics_Port string
+		Cons_Metrics_Port string
+		Metrics_Endpoint  string
+	}
 	Producer struct {
 		Max_Backlog     int
 		Prod_Rate       int
 		Flow_Size_Limit int64
 	}
 	Consumer struct {
+		Host            string
+		Port            string
 		Rate_Limit      int
 		Flow_Size_Limit int64
 	}
