@@ -16,13 +16,13 @@ producer:
   flow_size_limit: 1000000  # the most number of Bytes that can be sent at a time
 
 consumer:
-  host: "localhost"
+  host: "consumer"
   port: 12345
   rate_limit: 1000          # maximum number of messages in the stream per second
   flow_size_limit: 1000000  # the most number of Bytes that can be in the stream at a time
 
 database:
-  host: "localhost"
+  host: "postgres"
   user: "postgres"
   password: "postgres"
   dbname: "task_flow"

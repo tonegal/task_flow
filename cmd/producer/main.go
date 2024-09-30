@@ -47,6 +47,7 @@ func Init_Producer() {
 		panic(err)
 	}
 	defer pg_conn.Close(ctx)
+
 	queries := internal.New(pg_conn)
 
 	fmt.Println("Postgres connection created...")

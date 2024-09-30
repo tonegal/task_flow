@@ -1,0 +1,96 @@
+
+volumes:
+  prometheus_data: {}
+  grafana_data: {}
+  pgdata: {}
+
+services:
+
+  postgres:
+    image: postgres
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: task_flow
+    ports:
+      - "5432:5432"
+    networks:
+      - monitoring
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  prometheus:
+    image: prom/prometheus:v2.36.2
+    container_name: prometheus
+    volumes:
+      - ./third_party/prometheus/:/etc/prometheus/
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - 9090:9090
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    user: "472"
+    depends_on:
+      - prometheus
+    ports:
+      - 3000:3000
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  process-exporter:
+    image: ncabatoff/process-exporter
+    container_name: process-exporter
+    command: ["./process-exporter", "-config.path=/process-exporter.yml"]
+    volumes:
+      - /proc:/host/proc
+      - ./third_party/process-exporter/process-exporter.yml:/process-exporter.yml
+    restart: unless-stopped
+    ports:
+      - "9256:9256"
+    networks:
+      - monitoring
+
+  consumer:
+    container_name: consumer
+    build:
+      context: .
+      dockerfile: cmd/consumer/Dockerfile
+    networks:
+      - monitoring
+    ports:
+      - "8091:8091"
+    depends_on:
+      postgres:
+        condition: service_started
+
+  producer:
+    container_name: producer
+    build:
+      context: .
+      dockerfile: cmd/producer/Dockerfile
+    networks:
+      - monitoring
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_started
+      consumer:
+        condition: service_started
+  
+networks:
+  monitoring:
+    driver: bridge
+    external: true
