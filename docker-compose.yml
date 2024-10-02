@@ -28,6 +28,8 @@ services:
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # needs "metrics-addr": "172.17.0.1:9323" line in daemon.json
     ports:
       - 9090:9090
     restart: unless-stopped
@@ -61,6 +63,20 @@ services:
       - "9256:9256"
     networks:
       - monitoring
+
+  # cadvisor:
+  #   image: gcr.io/google-containers/cadvisor:v0.36.0
+  #   # command:
+  #   #   - "--cgroupv2"
+  #   ports:
+  #     - "8080:8080"
+  #   privileged: true
+  #   volumes:
+  #     - /:/rootfs:ro
+  #     - /var/run:/var/run:ro
+  #     - /sys:/sys:ro
+  #     - /sys/fs/cgroup:/sys/fs/cgroup:ro
+  #     - /var/lib/docker/:/var/lib/docker:ro
 
   consumer:
     container_name: consumer

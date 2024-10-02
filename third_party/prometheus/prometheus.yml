@@ -1,0 +1,40 @@
+# my global config
+global:
+  scrape_interval: 15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+  evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
+  # scrape_timeout is set to the global default (10s).
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  # metrics_path defaults to '/metrics'
+  # scheme defaults to 'http'.
+
+  - job_name: "producer_metrics"
+    static_configs:
+      - targets: ["producer:8090"]
+  - job_name: "consumer_metrics"
+    static_configs:
+      - targets: ["consumer:8091"]
+  - job_name: docker
+    static_configs:
+      - targets: ["host.docker.internal:9323"]  # needs "metrics-addr": "172.17.0.1:9323" line in daemon.json
+  # - job_name: 'cadvisor'
+  #   static_configs:
+  #     - targets: ['cadvisor:8080']
+  # - job_name: 'process_exporter'
+  #   static_configs:
+  #     - targets: ['process-exporter:9256']

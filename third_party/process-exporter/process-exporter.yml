@@ -1,0 +1,7 @@
+process_names:
+  - name: "consumer"
+    cmdline:
+      - "consumer"
+  - name: "producer"
+    cmdline:
+      - "producer"
