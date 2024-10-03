@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// Prometheus metric variables
 var (
 	tasksProcessing = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "tasks_processing_total",
@@ -48,6 +50,7 @@ var (
 	)
 )
 
+// Recevier handler of RPC stream
 type ConsumerImpl struct {
 	queries *internal.Queries
 }
@@ -55,7 +58,7 @@ type ConsumerImpl struct {
 func (ci ConsumerImpl) StreamTask(ctx context.Context, call internal.ByteStream_streamTask) error {
 	task_obj, err := call.Args().Task()
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	tid := task_obj.Tid()
@@ -69,12 +72,14 @@ func (ci ConsumerImpl) StreamTask(ctx context.Context, call internal.ByteStream_
 		LastUpdateTime: pgtype.Timestamp{Time: now_utc, Valid: true},
 	})
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	tasksProcessing.Inc()
 
-	//fmt.Printf("Task started to be processed: ID: %d, Type: %d, Value: %d\n", tid, ttype, tvalue)
+	log.Printf("Task processing started: ID: %d, Type: %d, Value: %d\n", tid, ttype, tvalue)
+
+	// Simulate task with a simple sleep call
 	time.Sleep(time.Duration(tvalue) * time.Millisecond)
 
 	now_utc = time.Now().UTC()
@@ -84,7 +89,7 @@ func (ci ConsumerImpl) StreamTask(ctx context.Context, call internal.ByteStream_
 		LastUpdateTime: pgtype.Timestamp{Time: now_utc, Valid: true},
 	})
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	tasksProcessing.Dec()
@@ -93,63 +98,45 @@ func (ci ConsumerImpl) StreamTask(ctx context.Context, call internal.ByteStream_
 	tasksDone.Inc()
 	tasksDoneByType.WithLabelValues(ttype_string).Inc()
 
-	//fmt.Printf("Task %d processed\n", tid)
+	log.Printf("Task %d processed\n", tid)
 	return nil
 }
 
 func (ConsumerImpl) Done(ctx context.Context, call internal.ByteStream_done) error {
-	fmt.Println("RPC call for Done method landed")
+	log.Println("RPC Done call landed")
 	return nil
 }
 
-func Init_Consumer() error {
-	cfg := config.LoadConfig()
+func CleanUpDb(ctx context.Context, quer *internal.Queries) {
 
-	db_conn_str := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Database.Host,
-		cfg.Database.User,
-		cfg.Database.Password,
-		cfg.Database.Dbname,
-		cfg.Database.Sslmode,
-	)
-
-	ctx := context.Background()
-
-	pg_conn, err := pgx.Connect(ctx, db_conn_str)
+	now_utc := time.Now().UTC()
+	updated_recs, err := quer.ReplaceAllTaskState(ctx, internal.ReplaceAllTaskStateParams{
+		State:          "processing",
+		State_2:        "interrupt",
+		LastUpdateTime: pgtype.Timestamp{Time: now_utc, Valid: true},
+	})
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
-	defer pg_conn.Close(ctx)
+	log.Printf("Database states cleaned: %d records are updated from 'processing' to 'interrupt'\n", len(updated_recs))
+}
 
-	queries := internal.New(pg_conn)
+func Receive_Tasks(cfg *config.Config, ctx context.Context, client internal.ByteStream) error {
 
-	fmt.Println("Postgres connection created...")
-
-	internal.StartMetricsServer(cfg.Prometheus.Cons_Metrics_Port)
-	tasksProcessing.Set(0)
-	tasksDone.Set(0)
-	tasksSumValuesByType.Reset()
-	tasksDoneByType.Reset()
-
-	fmt.Println("Metrics populator is started...")
-
-	server := ConsumerImpl{queries: queries}
-	client := internal.ByteStream_ServerToClient(server)
-	client.SetFlowLimiter(flowcontrol.NewFixedLimiter(cfg.Consumer.Flow_Size_Limit)) // 1 Message is ~8 Byte
-
+	// Set up listener
 	address := fmt.Sprintf("%s:%s", cfg.Consumer.Host, cfg.Consumer.Port)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 	defer listener.Close()
 
 	for {
-		fmt.Println("Consumer listener ready...")
+		// Get incoming connection
+		log.Println("Consumer listener ready...")
 		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Printf("Failed to accept connection: %v\n", err)
+			log.Printf("Failed to accept connection: %v\n", err)
 			continue
 		}
 		defer conn.Close()
@@ -168,6 +155,49 @@ func Init_Consumer() error {
 			return rpcConn.Close()
 		}
 	}
+}
+
+func Init_Consumer() {
+	cfg := config.LoadConfig()
+
+	db_conn_str := fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s sslmode=%s",
+		cfg.Database.Host,
+		cfg.Database.User,
+		cfg.Database.Password,
+		cfg.Database.Dbname,
+		cfg.Database.Sslmode,
+	)
+
+	ctx := context.Background()
+
+	pg_conn, err := pgx.Connect(ctx, db_conn_str)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer pg_conn.Close(ctx)
+
+	queries := internal.New(pg_conn)
+
+	log.Println("Postgres connection created...")
+
+	internal.StartMetricsServer(cfg.Prometheus.Cons_Metrics_Port)
+	tasksProcessing.Set(0)
+	tasksDone.Set(0)
+	tasksSumValuesByType.Reset()
+	tasksDoneByType.Reset()
+
+	log.Println("Metrics populator is started...")
+
+	// If there are remaining 'processing' states, update their state to 'interrupt'
+	CleanUpDb(ctx, queries)
+
+	server := ConsumerImpl{queries: queries}
+	client := internal.ByteStream_ServerToClient(server)
+	client.SetFlowLimiter(flowcontrol.NewFixedLimiter(cfg.Consumer.Flow_Size_Limit)) // 1 Message is ~8 Byte
+
+	Receive_Tasks(cfg, ctx, client)
+
 }
 
 func main() {

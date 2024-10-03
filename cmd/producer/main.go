@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"time"
@@ -32,16 +33,16 @@ func Generate_Tasks(cfg *config.Config, ctx context.Context, quer *internal.Quer
 
 	taskID, err := quer.GetMaxTaskID(ctx)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	var maxID int32
 	if taskID == nil {
-		fmt.Println("No tasks found. ID is defaulting to 0.")
+		log.Println("No tasks found. ID is defaulting to 0.")
 		maxID = 0
 	} else {
 		maxID = taskID.(int32)
-		fmt.Printf("Maximal ID value among stored Task records: %d\n", maxID)
+		log.Printf("Maximal ID value among stored Task records: %d\n", maxID)
 		maxID++
 	}
 
@@ -54,12 +55,12 @@ func Generate_Tasks(cfg *config.Config, ctx context.Context, quer *internal.Quer
 		arena := capnp.SingleSegment(nil)
 		_, seg, err := capnp.NewMessage(arena)
 		if err != nil {
-			panic(err)
+			log.Panic(err)
 		}
 
 		taskObj, err := internal.NewTaskMessage(seg)
 		if err != nil {
-			panic(err)
+			log.Panic(err)
 		}
 
 		//rand.Seed(time.Now().UnixNano())
@@ -71,7 +72,7 @@ func Generate_Tasks(cfg *config.Config, ctx context.Context, quer *internal.Quer
 		taskObj.SetTvalue(uint8(tvalue))
 
 		now_utc := time.Now().UTC()
-		_, err = quer.CreateTask(ctx, internal.CreateTaskParams{
+		inTask, err := quer.CreateTask(ctx, internal.CreateTaskParams{
 			ID:             tid,
 			Type:           int16(taskObj.Ttype()),
 			Value:          int16(taskObj.Tvalue()),
@@ -80,26 +81,32 @@ func Generate_Tasks(cfg *config.Config, ctx context.Context, quer *internal.Quer
 			LastUpdateTime: pgtype.Timestamp{Time: now_utc, Valid: true},
 		})
 		if err != nil {
-			panic(err)
+			log.Panic(err)
 		}
 
 		tasksReceived.Inc()
 
-		//fmt.Printf("Task inserted to DB: ID: %d, Type: %d, Value: %d\n", inTask.ID, inTask.Type, inTask.Value)
+		log.Printf("Task inserted to DB: ID: %d, Type: %d, Value: %d\n", inTask.ID, inTask.Type, inTask.Value)
 
 		err = bs.StreamTask(ctx, func(p internal.ByteStream_streamTask_Params) error {
 			return p.SetTask(taskObj)
 		})
 		if err != nil {
-			panic(err)
+			log.Panic(err)
 		}
-		//fmt.Printf("Sent Task: ID: %d, Type: %d Value: %d\n", taskObj.Tid(), taskObj.Ttype(), taskObj.Tvalue())
+		log.Printf("Sent Task: ID: %d, Type: %d Value: %d\n", taskObj.Tid(), taskObj.Ttype(), taskObj.Tvalue())
 	}
 }
 
 func Init_Producer() {
 
+	//log.SetOutput(os.Stdout)
+
+	fmt.Println("Logger output is set...")
+
 	cfg := config.LoadConfig()
+
+	log.Println("Configurations are loaded...")
 
 	db_conn_str := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s sslmode=%s",
@@ -114,34 +121,34 @@ func Init_Producer() {
 
 	pg_conn, err := pgx.Connect(ctx, db_conn_str)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 	defer pg_conn.Close(ctx)
 
 	queries := internal.New(pg_conn)
 
-	fmt.Println("Postgres connection created...")
+	log.Println("Postgres connection created...")
 
 	internal.StartMetricsServer(cfg.Prometheus.Prod_Metrics_Port)
 	tasksReceived.Set(0)
 
-	fmt.Println("Metrics populator is started...")
+	log.Println("Metrics populator is started...")
 
 	address := fmt.Sprintf("%s:%s", cfg.Consumer.Host, cfg.Consumer.Port)
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 	defer conn.Close()
 
-	fmt.Println("Producer connected to consumer...")
+	log.Println("Producer connected to consumer...")
 
 	rpc_conn := rpc.NewConn(rpc.NewStreamTransport(conn), nil)
 	defer rpc_conn.Close()
 	bs := internal.ByteStream(rpc_conn.Bootstrap(ctx))
 	bs.SetFlowLimiter(flowcontrol.NewFixedLimiter(cfg.Producer.Flow_Size_Limit)) // 1 Message is ~8 Byte
 
-	fmt.Println("ByteStream RPC connection created...")
+	log.Println("ByteStream RPC connection created...")
 
 	Generate_Tasks(cfg, ctx, queries, bs)
 
@@ -149,7 +156,7 @@ func Init_Producer() {
 	defer release()
 	_, err = future.Struct()
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	if err := bs.WaitStreaming(); err != nil {

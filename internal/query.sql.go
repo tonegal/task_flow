@@ -79,6 +79,48 @@ func (q *Queries) GetTaskValue(ctx context.Context, id int32) (GetTaskValueRow, 
 	return i, err
 }
 
+const replaceAllTaskState = `-- name: ReplaceAllTaskState :many
+UPDATE TASK_T
+    SET
+    STATE = $2,
+    LAST_UPDATE_TIME = $3
+WHERE STATE = $1
+RETURNING id, type, value, state, creation_time, last_update_time
+`
+
+type ReplaceAllTaskStateParams struct {
+	State          string
+	State_2        string
+	LastUpdateTime pgtype.Timestamp
+}
+
+func (q *Queries) ReplaceAllTaskState(ctx context.Context, arg ReplaceAllTaskStateParams) ([]TaskT, error) {
+	rows, err := q.db.Query(ctx, replaceAllTaskState, arg.State, arg.State_2, arg.LastUpdateTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TaskT
+	for rows.Next() {
+		var i TaskT
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Value,
+			&i.State,
+			&i.CreationTime,
+			&i.LastUpdateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateTaskState = `-- name: UpdateTaskState :one
 UPDATE TASK_T
     SET

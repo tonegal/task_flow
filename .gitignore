@@ -1,2 +1,4 @@
 cmd/consumer/consumer
 cmd/producer/producer
+grafana
+third_party/loki/loki-data

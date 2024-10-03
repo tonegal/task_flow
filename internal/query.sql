@@ -21,3 +21,11 @@ UPDATE TASK_T
     LAST_UPDATE_TIME = $3
 WHERE ID = $1
 RETURNING *;
+
+-- name: ReplaceAllTaskState :many
+UPDATE TASK_T
+    SET
+    STATE = $2,
+    LAST_UPDATE_TIME = $3
+WHERE STATE = $1
+RETURNING *;

@@ -51,18 +51,34 @@ services:
     networks:
       - monitoring
 
-  # process-exporter:
-  #   image: ncabatoff/process-exporter
-  #   container_name: process-exporter
-  #   command: ["./process-exporter", "-config.path=/process-exporter.yml"]
-  #   volumes:
-  #     - /proc:/host/proc
-  #     - ./third_party/process-exporter/process-exporter.yml:/process-exporter.yml
-  #   restart: unless-stopped
-  #   ports:
-  #     - "9256:9256"
-  #   networks:
-  #     - monitoring
+  loki:
+    image: grafana/loki
+    container_name: loki
+    user: "root"
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./third_party/loki:/etc/loki
+      - ./third_party/loki/loki-data/index:/loki/index
+      - ./third_party/loki/loki-data/cache:/loki/cache
+      - ./third_party/loki/loki-data/chunks:/loki/chunks
+    networks:
+      - monitoring
+
+  promtail:
+    image: grafana/promtail
+    container_name: promtail
+    ports:
+      - "9080:9080"
+    volumes:
+      - /var/log:/var/log
+      - ./third_party/promtail:/etc/promtail
+    command:
+      -config.file=/etc/promtail/promtail-config.yaml
+    networks:
+      - monitoring
+
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.44.0
@@ -103,6 +119,10 @@ services:
       - monitoring
     ports:
       - "8090:8090"
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
     depends_on:
       postgres:
         condition: service_started
