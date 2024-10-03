@@ -51,32 +51,35 @@ services:
     networks:
       - monitoring
 
-  process-exporter:
-    image: ncabatoff/process-exporter
-    container_name: process-exporter
-    command: ["./process-exporter", "-config.path=/process-exporter.yml"]
-    volumes:
-      - /proc:/host/proc
-      - ./third_party/process-exporter/process-exporter.yml:/process-exporter.yml
-    restart: unless-stopped
+  # process-exporter:
+  #   image: ncabatoff/process-exporter
+  #   container_name: process-exporter
+  #   command: ["./process-exporter", "-config.path=/process-exporter.yml"]
+  #   volumes:
+  #     - /proc:/host/proc
+  #     - ./third_party/process-exporter/process-exporter.yml:/process-exporter.yml
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9256:9256"
+  #   networks:
+  #     - monitoring
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.44.0
+    container_name: cadvisor
+    # command:
+    #   - "--cgroupv2"
     ports:
-      - "9256:9256"
+      - "8080:8080"
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/lib/docker/:/var/lib/docker:ro
     networks:
       - monitoring
-
-  # cadvisor:
-  #   image: gcr.io/google-containers/cadvisor:v0.36.0
-  #   # command:
-  #   #   - "--cgroupv2"
-  #   ports:
-  #     - "8080:8080"
-  #   privileged: true
-  #   volumes:
-  #     - /:/rootfs:ro
-  #     - /var/run:/var/run:ro
-  #     - /sys:/sys:ro
-  #     - /sys/fs/cgroup:/sys/fs/cgroup:ro
-  #     - /var/lib/docker/:/var/lib/docker:ro
 
   consumer:
     container_name: consumer
